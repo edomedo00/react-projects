@@ -41,7 +41,10 @@ function Tabbed({ content }) {
       </div>
 
       {activeTab <= 2 ? (
-        <TabContent item={content.at(activeTab)} />
+        <TabContent
+          item={content.at(activeTab)}
+          key={content.at(activeTab).summary} // using a key makes the component different and unique
+        />
       ) : (
         <DifferentContent />
       )}
@@ -65,7 +68,25 @@ function TabContent({ item }) {
   const [likes, setLikes] = useState(0);
 
   function handleInc() {
-    setLikes(likes + 1);
+    setLikes((likes) => likes + 1);
+  }
+
+  function handleUndo() {
+    setShowDetails(true);
+    setLikes(0);
+    console.log(likes); // this shows the likes before the set state to 0 because of how react works
+  }
+
+  function handleTripleInc() {
+    // this does not work increasing 3 to likes, because the value of likes is 0 until the component is rerendered
+    // setLikes(likes + 1);
+    // setLikes(likes + 1);
+    // setLikes(likes + 1);
+
+    // this way it does work because you get access to the latest state of the likes
+    setLikes((likes) => likes + 1);
+    setLikes((likes) => likes + 1);
+    setLikes((likes) => likes + 1);
   }
 
   return (
@@ -81,12 +102,12 @@ function TabContent({ item }) {
         <div className="hearts-counter">
           <span>{likes} ❤️</span>
           <button onClick={handleInc}>+</button>
-          <button>+++</button>
+          <button onClick={handleTripleInc}>+++</button>
         </div>
       </div>
 
       <div className="tab-undo">
-        <button>Undo</button>
+        <button onClick={handleUndo}>Undo</button>
         <button>Undo in 2s</button>
       </div>
     </div>

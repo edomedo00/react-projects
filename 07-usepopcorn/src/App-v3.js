@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import StarRating from "./StarRating";
-import { useMovies } from "./useMovies";
-import { useLocalStorageState } from "./useLocalStorageState";
-import { useKey } from "./useKey";
 
 const average = (arr) =>
   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
@@ -11,15 +8,20 @@ const KEY = "46d24e6f";
 
 export default function App() {
   const [query, setQuery] = useState("");
+  const [movies, setMovies] = useState([]);
+  const [isLoading, setIsLoading] = useState(false); // for loading UI implementation
+  const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
 
-  // this function stores the logic for when you search for a movie
-  const { movies, isLoading, error } = useMovies(query, handleCloseMovie); // this uses a custom hook (which is a function that can work with states or other hooks and receive arguments)
-
-  // this is another custom hook that stores the watched movies in the browsers local storage
-  const [watched, setWatched] = useLocalStorageState([], "watched");
-
   // const [watched, setWatched] = useState([]);
+
+  // this is the way of setting an initial state that depends on other stuff, using a function
+  const [watched, setWatched] = useState(function () {
+    // this function ONLY runs on the initial render
+    // it cant accept Arguments
+    const storedValue = localStorage.getItem("watched");
+    return JSON.parse(storedValue);
+  });
 
   // // and effect is an interaction between a React component and the world outside the component
   // useEffect(function () {
@@ -65,6 +67,65 @@ export default function App() {
   function handleDeleteWatched(id) {
     setWatched((watched) => watched.filter((movie) => movie.imdbID !== id)); // filter is used for deletions, only includes theones that meet the criteria
   }
+
+  // effect for storing watched movies in the local storage
+  useEffect(
+    function () {
+      localStorage.setItem("watched", JSON.stringify(watched)); // this stores the list of watched movies in the browser local storage
+    },
+    [watched],
+  );
+
+  useEffect(
+    function () {
+      const controller = new AbortController(); // this is a browser API, not react itself
+
+      async function fetchMovies() {
+        try {
+          setIsLoading(true);
+          setError("");
+
+          const res = await fetch(
+            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            { signal: controller.signal }, // this is how the controller for aborting fetching data is set
+          );
+
+          if (!res.ok)
+            throw new Error("Something went wrong with fetching the movies");
+
+          const data = await res.json();
+          if (data.Response === "False") throw new Error("Movie not found");
+
+          setMovies(data.Search);
+          // console.log(data);
+          setError("");
+        } catch (err) {
+          // console.error(err.message);
+
+          if (err.name !== "AbortError") {
+            // this prevents from interpreting abort error as a real error in the app
+            setError(err.message);
+          }
+        } finally {
+          setIsLoading(false);
+        }
+      }
+
+      if (query.length < 3) {
+        setMovies([]);
+        setError("");
+        return;
+      }
+
+      handleCloseMovie();
+      fetchMovies();
+
+      return function () {
+        controller.abort(); // this is how the fetch is aborted each time that the component is rerendered
+      };
+    },
+    [query],
+  );
 
   return (
     <>
@@ -164,30 +225,23 @@ function Search({ query, setQuery }) {
   const inputEl = useRef(null);
   // inputEl.current.focus(); // then we call the focus method on the element, only on mount
 
-  // using a custom hook again
-  useKey("Enter", function () {
-    if (document.activeElement === inputEl.current) return; // prevents from erasing the search if you have it on focus
-    inputEl.current.focus();
-    setQuery("");
-  });
-
   // this effect handles the auto focus on the search input bar on certain conditions
   // it uses a ref only to select the document element, not to handle the keydown event
-  // useEffect(
-  //   function () {
-  //     function callback(e) {
-  //       if (e.code === "Enter") {
-  //         if (document.activeElement === inputEl.current) return; // prevents from erasing the search if you have it on focus
-  //         inputEl.current.focus();
-  //         setQuery("");
-  //       }
-  //     }
+  useEffect(
+    function () {
+      function callback(e) {
+        if (e.code === "Enter") {
+          if (document.activeElement === inputEl.current) return; // prevents from erasing the search if you have it on focus
+          inputEl.current.focus();
+          setQuery("");
+        }
+      }
 
-  //     document.addEventListener("keydown", callback);
-  //     return () => document.addEventListener("keydown", callback);
-  //   },
-  //   [setQuery],
-  // );
+      document.addEventListener("keydown", callback);
+      return () => document.addEventListener("keydown", callback);
+    },
+    [setQuery],
+  );
 
   return (
     <input
@@ -311,26 +365,24 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
     onCloseMovie();
   }
 
-  useKey("Escape", onCloseMovie); // you send the function, not a function call onCloseMovie()
+  // to make ESC actually escaoe
+  useEffect(
+    function () {
+      function callback(e) {
+        if (e.code === "Escape") {
+          onCloseMovie();
+          // console.log("ESC");
+        }
+      }
 
-  // // to make ESC actually escaoe
-  // useEffect(
-  //   function () {
-  //     function callback(e) {
-  //       if (e.code === "Escape") {
-  //         onCloseMovie();
-  //         // console.log("ESC");
-  //       }
-  //     }
+      document.addEventListener("keydown", callback);
 
-  //     document.addEventListener("keydown", callback);
-
-  //     return function () {
-  //       document.removeEventListener("keydown", callback); // this clerup func removes the event listener for them not to pile up every time a component is mounted
-  //     };
-  //   },
-  //   [onCloseMovie], // weird but ok
-  // );
+      return function () {
+        document.removeEventListener("keydown", callback); // this clerup func removes the event listener for them not to pile up every time a component is mounted
+      };
+    },
+    [onCloseMovie], // weird but ok
+  );
 
   useEffect(
     // effect for getting movie details from the movies API
